@@ -20,7 +20,7 @@ int main()
     Lecteur lecteur;
     Afficheur afficheur;
     Buzzer buzzer;
-    FichierAcceCsv fichierCSV;
+    FichierAcceCsv fichierCSV((string)"acces.csv");
     FichierAccesLog fichierLOG((string)"acces.log");
     Voyants voyants;
     Leds leds;

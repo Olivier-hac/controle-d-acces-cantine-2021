@@ -18,6 +18,12 @@ void Fichier::ecrire1Ligne(string chaine) {
     fichier << chaine << endl;
 }
 
+string Fichier::lire1ligne() {
+    string ligne;
+    if (getline(fichier, ligne)) return ligne;
+    else return (string)"_-_EOF_-_";
+}
+
 void Fichier::fermer() {
     fichier.close();
 }

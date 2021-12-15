@@ -13,6 +13,7 @@ class Fichier
         void ouvrir(char mode);
         string nom;
         void ecrire1Ligne(string chaine);
+        string lire1ligne();
         void fermer();
         fstream fichier;
 

@@ -14,7 +14,7 @@ Lecteur::~Lecteur()
 
 string Lecteur::lireID() {
     cout << "Lecture de l'ID sur la carte" << endl;
-    return "12345";
+    //return "12345";
     //return "56789";
-    //return "04560";
+    return "04560";
 }
