@@ -1,0 +1,313 @@
+Rs232::Rs232(string _port) {
+    //ctor
+    port=_port;
+}
+
+Rs232::~Rs232() {
+    //dtor
+}
+
+int Rs232::ouvrir(int vitesse, int nbBits, char parite, int nbStops, bool flowCtrl) {
+    char mode_str[128];
+    erreur="";
+
+    switch(vitesse) {
+    case     110 :
+    case     300 :
+    case     600 :
+    case    1200 :
+    case    2400 :
+    case    4800 :
+    case    9600 :
+    case   19200 :
+    case   38400 :
+    case   57600 :
+    case  115200 :
+    case  128000 :
+    case  256000 :
+    case  500000 :
+    case  921600 :
+    case 1000000 :
+    case 1500000 :
+    case 2000000 :
+    case 3000000 :
+        //vitesse correcte donc in ne fait rien
+        break; //
+
+    default      :
+        vitesse=9600;
+        erreur+="vitesse invalide\n";
+        return ERREUR;
+        break;
+    }
+
+    if (nbBits<5 || nbBits>8) {
+        nbBits=8;
+        erreur+="nbBits invalide\n";
+        return ERREUR;
+    }
+
+    switch(parite) {
+    case 'N':
+    case 'n':
+        parite='n';
+        break;
+    case 'E':
+    case 'e':
+    case 'p' : //paire
+    case 'P' :
+        parite='e';
+        break;
+    case 'O':
+    case 'o':
+    case 'I': //impaire
+    case 'i':
+        parite='o';
+        break;
+    default :
+        parite='n';
+        erreur+="parite invalide\n";
+        return ERREUR;
+        break;
+    }
+
+    if (nbStops!=1 && nbStops!=2) {
+        nbStops=1;
+        erreur+="nbStops invalide\n";
+        return ERREUR;
+    }
+
+    string chFlow="on";
+
+    if(flowCtrl) chFlow="off";
+
+    string chPort="\\\\.\\COM";
+    bool isNum=true;
+
+    sprintf(mode_str, "baud=%d data=%d parity=%c stop=%d xon=off to=off odsr=off dtr=on rts=%s",vitesse,nbBits,parite,nbStops,chFlow.c_str());
+
+    //si le nom du port com ne commence pas par com ou COM
+    if ((toupper((int)port[0])=='C')
+            && (toupper(port[1])=='O')
+            && (toupper(port[2])=='M')
+            && (port.length()>3)) {
+
+        for (unsigned int i=3; i<port.length(); i++) if (!isdigit(port[i])) isNum=false;
+        if (isNum) chPort+=port.substr(3,port.length()-3);
+    }
+
+    if (!isNum) { //problème dans le nom du port sére
+        port="COM1";
+        erreur+="nom du port série invalide\n";
+        return ERREUR;
+
+    }
+    //printf("pour le port %s : %s\n", chPort.c_str(), mode_str);
+
+    /*
+    http://msdn.microsoft.com/en-us/library/windows/desktop/aa363145%28v=vs.85%29.aspx
+
+    http://technet.microsoft.com/en-us/library/cc732236.aspx
+
+    https://docs.microsoft.com/en-us/windows/desktop/api/winbase/ns-winbase-_dcb
+    */
+
+    hPort = CreateFileA(chPort.c_str(),
+                        GENERIC_READ|GENERIC_WRITE,
+                        0,                          /* no share  */
+                        NULL,                       /* no security */
+                        OPEN_EXISTING,
+                        0,                          /* no threads */
+                        NULL);                      /* no templates */
+
+    if(chPort.c_str()==INVALID_HANDLE_VALUE) {
+        erreur+="impossible d'ouvrir le port serie\n";
+        return ERREUR;
+    }
+
+    DCB port_settings;
+    memset(&port_settings, 0, sizeof(port_settings));  /* clear the new struct  */
+    port_settings.DCBlength = sizeof(port_settings);
+
+    if(!BuildCommDCBA(mode_str, &port_settings)) {
+        erreur+="impossible de regler les parametres dcb du port serie\n";
+        CloseHandle(hPort);
+        return ERREUR;
+    }
+
+    if(flowCtrl) {
+        port_settings.fOutxCtsFlow = TRUE;
+        port_settings.fRtsControl = RTS_CONTROL_HANDSHAKE;
+    }
+
+    if(!SetCommState(hPort, &port_settings)) {
+        erreur+="impossible de regler les parametres cfg du port serie\n";
+        CloseHandle(hPort);
+        return ERREUR;
+    }
+
+    COMMTIMEOUTS Cptimeouts;
+
+    Cptimeouts.ReadIntervalTimeout         = MAXDWORD;
+    Cptimeouts.ReadTotalTimeoutMultiplier  = 0;
+    Cptimeouts.ReadTotalTimeoutConstant    = 0;
+    Cptimeouts.WriteTotalTimeoutMultiplier = 0;
+    Cptimeouts.WriteTotalTimeoutConstant   = 0;
+
+    if(!SetCommTimeouts(hPort, &Cptimeouts)) {
+        erreur+="impossible de regler le parametre timeout du port serie\n";
+        CloseHandle(hPort);
+        return ERREUR;
+    }
+
+    return OK;
+}
+
+void Rs232::fermer() {
+    CloseHandle(hPort);
+}
+
+// Envoyer une chaine de caractère
+int Rs232::envoyerChaine(string chaine) {
+    int n;
+
+    if (WriteFile(hPort, (chaine.c_str()), chaine.length(), (LPDWORD)((void *)&n), NULL)) return(n);
+
+    else return ERREUR;
+
+}
+
+int Rs232::envoyerCaractere(char car) {
+    int n;
+
+    if (WriteFile(hPort, &car, 1, (LPDWORD)((void *)&n), NULL)) {
+        cout << car;
+        return n;
+
+    } else return ERREUR;
+}
+
+// Recevoir Nb caractères
+int Rs232::recevoir(int nb, string *chaine) {
+    char buf[256];
+    int n;
+
+    /* added the void pointer cast, otherwise gcc will complain about */
+    /* "warning: dereferencing type-punned pointer will break strict aliasing rules" */
+
+    ReadFile(hPort, buf, nb, (LPDWORD)((void *)&n), NULL);
+    *chaine=string(buf);
+
+    return n;
+}
+
+// Recevoir une chaîne se terminant par un caractère donné
+// (\r, \n ou autre)
+// avec ou sans time out
+int Rs232::recevoir(char fin, string *chaine, bool avecCarFin) { //, int mode) {
+    char car, n;
+    *chaine="";
+
+    do {
+        ReadFile(hPort, &car, 1, (LPDWORD)((void *)&n), NULL);
+        if (n>0) {
+            //car -=0x300;
+            if (car!=fin) *chaine+=car;
+            else if (avecCarFin) *chaine+=car;
+            //printf("%02x-",car);
+        }
+    } while (car != fin);
+
+    return (*chaine).length();
+}
+
+
+int Rs232::recevoir(char fin, string *chaine, bool avecCarFin, int nbSecTimeOut) {
+    char car, n;
+    *chaine="";
+    time_t timeRef;
+    time_t curTime;
+
+    time(&timeRef);
+
+    do {
+        ReadFile(hPort, &car, 1, (LPDWORD)((void *)&n), NULL);
+        if (n>0) {
+            //car -=0x300;
+            time(&timeRef);
+            if (car!=fin) *chaine+=car;
+            else if (avecCarFin) *chaine+=car;
+            //printf("%02x-",car);
+        }
+
+        time(&curTime);
+        if ((curTime - timeRef) >= nbSecTimeOut) {
+            erreur="timeout en reception\n";
+            return TIMEOUT;
+        }
+
+    } while (car != fin);
+
+    return (*chaine).length();
+}
+
+// Recevoir un caracère avec time out
+int Rs232::recevoirCaractere(char* caractere, int nbSecTimeOut) {
+    char car, n;
+    time_t timeRef;
+    time_t curTime;
+
+    time(&timeRef);
+
+    do {
+        ReadFile(hPort, &car, 1, (LPDWORD)((void *)&n), NULL);
+        if (n>0) {
+            //car -=0x300;
+            time(&timeRef);
+            *caractere=car;
+            return 1;
+        }
+
+        time(&curTime);
+        if ((curTime - timeRef) >= nbSecTimeOut) {
+            erreur="timeout en reception\n";
+            return TIMEOUT;
+        }
+
+    } while (true);
+}
+
+// Recevoir un fichier
+int Rs232::recevoirFichier(string nomFichier, int attenteDebut) {
+    FILE *fichier;
+    char car;
+    char chCar[2];
+    int attenteFin = 2;
+    int nb;
+
+    // attente du 1er caractère du fichier
+    do {
+        nb = recevoirCaractere(&car, attenteDebut);
+    } while(nb != 1 && nb != TIMEOUT);
+    if (nb == 1) {
+        // 1er caractère reçu
+        fichier = fopen(nomFichier.c_str(),"w");
+        do {
+            chCar[0] = car;
+            chCar[1] = '\0';
+            fputs(chCar, fichier);
+            nb = recevoirCaractere(&car, attenteFin);
+        } while (nb != TIMEOUT);
+        fclose(fichier);
+        return OK;
+    }
+    return TIMEOUT;
+}
+
+//
+//        // Recevoir un caracère avec time out
+//        int recevoirCaractere(char* caractere, int attente);
+//
+//        // Recevoir un fichier
+//        int recevoirFichier(string nomFichier, int attenteDebut);
+

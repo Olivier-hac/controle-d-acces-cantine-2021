@@ -1,0 +1,4 @@
+private:
+    termios config;
+    int fd; //pour linux
+

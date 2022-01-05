@@ -1,0 +1,292 @@
+Rs232::Rs232(string _port) {
+    //ctor
+    port=_port;
+}
+
+Rs232::~Rs232() {
+    //dtor
+}
+
+//-----------------------------------------------------------------------------
+int Rs232::ouvrir(int vitesse, int nbBits, char parite, int nbStops, bool flowCtrl) {
+    erreur="";
+    int res;
+
+    //Ouverture de la com.
+    fd = open(port.c_str(),O_RDWR | O_NONBLOCK);
+    if (fd == -1) {
+        return (-1);
+    } else {
+        // Suppression de l'echo
+        config.c_lflag &= ~(ECHO) ;
+
+        config.c_iflag = IGNBRK | IGNPAR;
+        config.c_oflag = 0;
+
+        config.c_cflag = CREAD | CLOCAL;
+
+        // vitesse
+        switch (vitesse) {
+        case 75:
+            config.c_cflag |= B75;
+            break;
+        case 110:
+            config.c_cflag |= B110;
+            break;
+        case 300:
+            config.c_cflag |= B300;
+            break;
+        case 600:
+            config.c_cflag |= B600;
+            break;
+        case 1200:
+            config.c_cflag |= B1200;
+            break;
+        case 1800:
+            config.c_cflag |= B1800;
+            break;
+        case 2400:
+            config.c_cflag |= B2400;
+            break;
+        case 4800:
+            config.c_cflag |= B4800;
+            break;
+        case 9600:
+            config.c_cflag |= B9600;
+            break;
+        case 19200:
+            config.c_cflag |= 19200;
+            break;
+        case 38400:
+            config.c_cflag |= B38400;
+            break;
+        case 57600:
+            config.c_cflag |= B57600;
+            break;
+        case 115200:
+            config.c_cflag |= B115200;
+            break;
+        case 230400:
+            config.c_cflag |= B230400;
+            break;
+
+        default:
+            erreur+="vitesse invalide\n";
+            return ERREUR;
+        }
+
+        // Taille data
+        switch (nbBits) {
+        case 8:
+            config.c_cflag |= CS8;
+            break;
+        case 7:
+            config.c_cflag |= CS7;
+            break;
+        case 6:
+            config.c_cflag |= CS6;
+            break;
+        case 5:
+            config.c_cflag |= CS5;
+            break;
+        default:
+            erreur+="nbBits invalide\n";
+            return ERREUR;
+        }
+
+        // Parite
+        switch (parite) {
+        case 'e':
+        case 'E':
+        case 'p': //paire
+        case 'P':
+            config.c_cflag |=  PARENB;
+            break;
+        case 'O':
+        case 'o':
+        case 'I': //impaire
+        case 'i':
+            config.c_cflag |= (PARODD | PARENB);
+            break;
+        case 'N':
+        case 'n':
+            break;
+        default :
+            erreur+="parite invalide\n";
+            return ERREUR;
+            break;
+        }
+
+        // Nombre de bits de stop
+        switch(nbStops) {
+        case 2 :
+            config.c_cflag |= CSTOPB;
+            break;
+        case 1 :
+            break;
+        default :
+            erreur+="nbStops invalide\n";
+            return ERREUR;
+            break;
+        }
+
+        // Application de la configuration
+
+        res = tcsetattr(fd, TCSANOW, &config);
+        if (res == -1) {
+            erreur="Erreur lors de l'application de la configuration\n";
+            return ERREUR;
+        }
+        tcflush(fd, TCIFLUSH);
+        tcflush(fd, TCOFLUSH);
+    }
+    return 0;
+}
+
+//----------------------------------------------------------------------------
+void Rs232::fermer() {
+    close(fd);
+}
+
+//----------------------------------------------------------------------------
+int Rs232::envoyerChaine(string chaine) {
+    int res = write (fd, chaine.c_str(), chaine.length());
+    return (res);
+}
+
+//----------------------------------------------------------------------------
+int Rs232::envoyerCaractere(char car) {
+    int res = write (fd, &car, 1);
+    return (res);
+}
+
+//----------------------------------------------------------------------------
+int Rs232::recevoir(int nb, string *chaine) {
+    int i = 0;
+    char car;
+    int res;
+    char pChaine[1024];
+
+    do {
+        res = read (fd, &car, 1);
+        if (res > 0) {
+            pChaine[i] = car;
+            i++;
+        }
+    } while (i < nb);
+
+    pChaine[i] == '\0';
+    *chaine=string(pChaine);
+    return i;
+}
+
+//----------------------------------------------------------------------------
+int Rs232::recevoir(char fin, string *chaine, bool avecCarFin) {
+    int i = 0;
+    char car = 0x00;
+    int res;
+    char pChaine[1024];
+
+    do {
+        res = read(fd, &car, 1);
+        if (res > 0) {
+            pChaine[i] = car;
+            i++;
+        }
+    } while (car != fin);
+
+    if (!avecCarFin) i--;
+
+    pChaine[i] = '\0';
+    *chaine=string(pChaine);
+    tcflush(fd, TCIFLUSH);
+    return i;
+}
+
+//----------------------------------------------------------------------------
+int Rs232::recevoir(char fin, string *chaine, bool avecCarFin, int nbSecTimeOut) {
+    char car;
+    int res;
+    *chaine="";
+    time_t timeRef;
+    time_t curTime;
+
+    time(&timeRef);
+
+    do {
+        res = read(fd, &car, 1);
+        if (res > 0) {
+            //car -=0x300;
+            time(&timeRef);
+            if (car!=fin) *chaine+=car;
+            else if (avecCarFin) *chaine+=car;
+            //printf("%02x-",car);
+        }
+
+        time(&curTime);
+        if ((curTime - timeRef) >= nbSecTimeOut) {
+            erreur="timeout en reception\n";
+            return TIMEOUT;
+        }
+
+    } while (car != fin);
+
+    return (*chaine).length();
+}
+
+//----------------------------------------------------------------------------
+int Rs232::recevoirCaractere(char* caractere, int nbSecTimeOut) {
+    char car;
+    int res;
+    time_t timeRef;
+    time_t curTime;
+
+    time(&timeRef);
+
+    do {
+        res = read (fd, &car, 1);
+        if (res>0) {
+            //car -=0x300;
+            time(&timeRef);
+            *caractere=car;
+            return 1;
+        }
+
+        time(&curTime);
+        if ((curTime - timeRef) >= nbSecTimeOut) {
+            erreur="timeout en reception\n";
+            return TIMEOUT;
+        }
+
+    } while (true);
+
+}
+
+//----------------------------------------------------------------------------
+int Rs232::Rs232::recevoirFichier(string nomFichier, int attenteDebut) {
+    FILE *fichier;
+    char car;
+    char chCar[2];
+    int attenteFin = 2;
+    int nb;
+
+    // attente du 1er caractère du fichier
+    do {
+        nb = recevoirCaractere(&car, attenteDebut);
+    } while(nb != 1 && nb != TIMEOUT);
+    if (nb == 1) {
+        // 1er caractère reçu
+        fichier = fopen(nomFichier.c_str(),"w");
+        do {
+            chCar[0] = car;
+            chCar[1] = '\0';
+            fputs(chCar, fichier);
+            nb = recevoirCaractere(&car, attenteFin);
+        } while (nb != TIMEOUT);
+        fclose(fichier);
+        return OK;
+    }
+    return TIMEOUT;
+}
+
+
